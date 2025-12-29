@@ -1,0 +1,9 @@
+.env
+vectordb/
+data/raw/
+__pycache__/
+.venv/
+.pytest_cache/
+.streamlit/
+*.sqlite3
+
