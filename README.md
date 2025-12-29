@@ -164,13 +164,13 @@ TEMPERATURE = 0
 
 ## 🗺️ Roadmap
 
-- [x] Day 1: Project setup + dependencies
-- [x] Day 2: Ingestion script (PDF/DOCX/PPTX → vector DB)
-- [x] Day 3: CLI Q&A with citations
-- [ ] Day 4: Streamlit web UI
-- [ ] Day 5: Answer modes (explain simply, MCQs, summaries)
-- [ ] Day 6: Web fallback toggle in UI
-- [ ] Day 7: Polish + demo
+-  Day 1: Project setup + dependencies
+-  Day 2: Ingestion script (PDF/DOCX/PPTX → vector DB)
+-  Day 3: CLI Q&A with citations
+-  Day 4: Streamlit web UI
+-  Day 5: Answer modes (explain simply, MCQs, summaries)
+-  Day 6: Web fallback toggle in UI
+-  Day 7: Polish + demo
 
 ---
 
@@ -182,5 +182,6 @@ MIT License — feel free to use and modify!
 
 ## 🙏 Acknowledgments
 
-Built using LangChain, OpenAI, and ChromaDB.
+- Built using LangChain, OpenAI, and ChromaDB. 
+- Development assisted by [Cursor](https://cursor.com/) + Claude AI
 
