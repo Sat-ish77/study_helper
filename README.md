@@ -5,17 +5,43 @@ A personal RAG (Retrieval-Augmented Generation) app that turns your study notes 
 ![Python](https://img.shields.io/badge/Python-3.12+-blue)
 ![LangChain](https://img.shields.io/badge/LangChain-1.2+-green)
 ![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4-orange)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.52+-red)
 
 ---
 
 ## ✨ Features
 
+### Core Features
 - **📄 Multi-format support** — PDF, DOCX, PPTX
 - **🔍 Semantic search** — Finds relevant content by meaning, not just keywords
 - **📝 Citations** — Every answer includes source file + page/slide number
 - **🌐 Web fallback** — Automatically searches the web when files don't have the answer
 - **⚙️ Answer modes** — Short, medium, or long answer styles
-- **🧠 Smart detection** — Detects comparison questions ("A vs B") and checks both sides exist
+
+### Quick Actions
+- **😊 Simpler** — Re-explains answers in simple, everyday language
+- **🔬 Technical** — Adds more scientific detail and terminology
+- **🇳🇵 Nepali** — Explains concepts in Nepali for easier understanding
+- **🔊 Listen** — Text-to-speech reads answers aloud
+- **💬 Deep Dive** — Follow-up chat panel for deeper exploration
+
+### Additional Features
+- **🧪 Quiz Lab** — Auto-generate quizzes (MCQ, True/False, Fill-in-blank)
+- **🎨 Themes** — 4 color themes (Night Study, Ocean Blue, Forest Green, Purple Haze)
+- **📊 Quiz Stats** — Track your quiz performance over time
+
+---
+
+## 🖼️ Screenshots
+
+### Home Page
+Beautiful landing page with feature overview and audio introduction.
+
+### Study Helper
+Ask questions, get cited answers, use quick actions for different explanations.
+
+### Quiz Lab
+Generate and take quizzes from your study notes.
 
 ---
 
@@ -25,8 +51,8 @@ A personal RAG (Retrieval-Augmented Generation) app that turns your study notes 
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/study-helper.git
-cd study-helper
+git clone https://github.com/Sat-ish77/study_helper.git
+cd study_helper
 
 # Install dependencies (using uv)
 uv sync
@@ -57,49 +83,13 @@ Drop your study files into the `data/raw/` folder:
 uv run python ingest.py
 ```
 
-This reads your files, splits them into chunks, and saves them to `vectordb/`.
-
-### 5. Start asking questions
+### 5. Start the web app
 
 ```bash
-uv run python main.py
+uv run streamlit run app.py
 ```
 
----
-
-## 💬 Usage
-
-### CLI Commands
-
-| Command | Description |
-|---------|-------------|
-| `:web on` | Enable web search fallback |
-| `:web off` | Disable web search fallback |
-| `:mode short` | Brief answers (3-6 bullet points) |
-| `:mode medium` | Balanced answers (default) |
-| `:mode long` | Detailed exam-style answers |
-| `exit` | Quit the app |
-
-### Example Session
-
-```
-📚 Study Helper (files-first) ready.
-
-Q: :web on
-✅ Web fallback is now: ON
-
-Q: What are the three main components of the cytoskeleton?
-
-A: The cytoskeleton consists of three main components:
-   - **Microtubules**: Long tubes formed by tubulin protein... [S1]
-   - **Microfilaments**: Actin polymers that maintain cell structure... [S2]
-   - **Intermediate filaments**: Tissue-specific structures... [S3]
-
-File Sources:
-- [S1] notes of actin filament.pdf (page 1)
-- [S2] notes of actin filament.pdf (page 3)
-- [S3] notes of actin filament.pdf (page 3)
-```
+Open `http://localhost:8501` in your browser.
 
 ---
 
@@ -107,15 +97,17 @@ File Sources:
 
 ```
 study-helper/
+├── app.py                    # Home page (Streamlit)
+├── pages/
+│   ├── 1_📚_Study_Helper.py  # Main Q&A interface
+│   └── 2_🧪_Quiz_Lab.py      # Quiz generation & grading
+├── main.py                   # Backend RAG logic
+├── ingest.py                 # Document ingestion script
 ├── data/
-│   └── raw/              # Put your study files here
-├── vectordb/             # Generated: vector database storage
-├── ingest.py             # Builds the knowledge base from files
-├── main.py               # CLI Q&A interface
-├── app.py                # (Coming soon) Streamlit web UI
-├── requirements.txt      # Python dependencies
-├── pyproject.toml        # Project configuration (uv)
-└── .env                  # Your API keys (create this)
+│   └── raw/                  # Put your study files here
+├── vectordb/                 # Generated: vector database
+├── pyproject.toml            # Project configuration (uv)
+└── .env                      # Your API keys (create this)
 ```
 
 ---
@@ -126,16 +118,49 @@ study-helper/
 |-----------|------------|
 | Framework | [LangChain](https://langchain.com/) |
 | LLM | [OpenAI GPT-4](https://openai.com/) |
-| Embeddings | OpenAI `text-embedding-ada-002` |
+| Embeddings | OpenAI text-embedding |
 | Vector DB | [ChromaDB](https://www.trychroma.com/) |
 | Web Search | [Tavily](https://tavily.com/) |
-| UI (Day 4) | [Streamlit](https://streamlit.io/) |
+| UI | [Streamlit](https://streamlit.io/) |
+| TTS | [gTTS](https://gtts.readthedocs.io/) |
+
+---
+
+## 🎨 Available Themes
+
+| Theme | Description |
+|-------|-------------|
+| 🌙 Night Study | Dark with amber accents (default) |
+| 🌊 Ocean Blue | Dark navy with cyan accents |
+| 🌲 Forest Green | Dark with green accents |
+| 🔮 Purple Haze | Dark with purple accents |
+
+---
+
+## 💬 CLI Mode (Optional)
+
+You can also use the CLI interface:
+
+```bash
+uv run python main.py
+```
+
+### CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `:web on` | Enable web search fallback |
+| `:web off` | Disable web search fallback |
+| `:mode short` | Brief answers |
+| `:mode medium` | Balanced answers (default) |
+| `:mode long` | Detailed exam-style answers |
+| `exit` | Quit the app |
 
 ---
 
 ## 🔧 Configuration
 
-You can tune these settings in `main.py`:
+Tune these settings in `main.py`:
 
 ```python
 # Retrieval settings
@@ -162,15 +187,20 @@ TEMPERATURE = 0
 
 ---
 
-## 🗺️ Roadmap
+## 🗺️ Completed Features
 
--  Day 1: Project setup + dependencies
--  Day 2: Ingestion script (PDF/DOCX/PPTX → vector DB)
--  Day 3: CLI Q&A with citations
--  Day 4: Streamlit web UI
--  Day 5: Answer modes (explain simply, MCQs, summaries)
--  Day 6: Web fallback toggle in UI
--  Day 7: Polish + demo
+- ✅ Project setup + dependencies
+- ✅ Ingestion script (PDF/DOCX/PPTX → vector DB)
+- ✅ CLI Q&A with citations
+- ✅ Streamlit web UI (multi-page)
+- ✅ Answer modes (Short/Medium/Long)
+- ✅ Web fallback toggle
+- ✅ Quick actions (Simpler, Technical, Nepali)
+- ✅ Text-to-Speech
+- ✅ Deep Dive chat panel
+- ✅ Quiz Lab (MCQ, True/False, Fill-in-blank)
+- ✅ Multiple themes
+- ✅ Welcome audio introduction
 
 ---
 
@@ -182,6 +212,9 @@ MIT License — feel free to use and modify!
 
 ## 🙏 Acknowledgments
 
-- Built using LangChain, OpenAI, and ChromaDB. 
+- Built using LangChain, OpenAI, ChromaDB, and Streamlit
 - Development assisted by [Cursor](https://cursor.com/) + Claude AI
 
+---
+
+**Personalized study app built by Satish** 🚀
