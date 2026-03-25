@@ -1,9 +1,48 @@
+# Environment
 .env
-vectordb/
-data/raw/
-__pycache__/
-.venv/
-.pytest_cache/
-.streamlit/
-*.sqlite3
+.env.local
+.env.production
 
+# Old ChromaDB (no longer used — replaced by Supabase pgvector)
+vectordb/
+
+# Old file drop folder (replaced by Upload Docs page)
+data/raw/
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Streamlit
+.streamlit/
+
+# Old SQLite (replaced by Supabase)
+*.sqlite3
+*.db
+
+# User uploaded files (stored in Supabase, not locally)
+user_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
