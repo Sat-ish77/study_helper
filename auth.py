@@ -32,7 +32,7 @@ def _render_login_tab():
     email    = st.text_input("Email", key="login_email")
     password = st.text_input("Password", type="password", key="login_password")
 
-    if st.button("Sign in", use_container_width=True, type="primary", key="btn_login"):
+    if st.button("Sign in", width='stretch', type="primary", key="btn_login"):
         if not email or not password:
             st.warning("Please enter email and password.")
             return
@@ -59,7 +59,7 @@ def _render_register_tab():
     password = st.text_input("Password (min 6 chars)", type="password", key="reg_password")
     confirm  = st.text_input("Confirm password", type="password", key="reg_confirm")
 
-    if st.button("Create account", use_container_width=True, type="primary", key="btn_register"):
+    if st.button("Create account", width='stretch', type="primary", key="btn_register"):
         if not email or not password:
             st.warning("Please fill in all fields.")
             return
@@ -107,7 +107,7 @@ def _render_app_password_gate():
             "Access code", type="password",
             key="app_password_input", placeholder="••••••••"
         )
-        if st.button("Unlock", use_container_width=True, type="primary", key="btn_unlock"):
+        if st.button("Unlock", width='stretch', type="primary", key="btn_unlock"):
             if not APP_PASSWORD:
                 st.session_state.app_unlocked = True
                 st.rerun()
@@ -167,5 +167,5 @@ def logout():
 
 
 def render_logout_button():
-    if st.button("🔒 Sign out", use_container_width=True, key="btn_signout"):
+    if st.button("🔒 Sign out", width='stretch', key="btn_signout"):
         logout()

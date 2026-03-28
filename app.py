@@ -107,7 +107,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
-    if st.button("▶️ Play Introduction", use_container_width=True, type="primary"):
+    if st.button("▶️ Play Introduction", width='stretch', type="primary"):
         with st.spinner("Generating audio..."):
             audio_data = generate_welcome_audio()
             if audio_data:
@@ -126,7 +126,7 @@ if st.session_state.get("show_welcome_audio") and st.session_state.get("welcome_
     )
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        if st.button("🔇 Close Audio", use_container_width=True, key="close_audio"):
+        if st.button("🔇 Close Audio", width='stretch', key="close_audio"):
             st.session_state.show_welcome_audio = False
             st.rerun()
 
@@ -206,6 +206,65 @@ for num, title, detail in steps:
         f'</div></div>',
         unsafe_allow_html=True
     )
+
+# ── 24hr Deadline Banner (Idea C) ───────────────────────────────────────────────────
+from canvas_api import get_upcoming_events, load_ical_url, fetch_canvas_events
+from datetime import datetime, timezone, timedelta
+
+if user_id:
+    # First fetch the raw events
+    ical_url = load_ical_url(user_id)
+    if ical_url:
+        raw_events = fetch_canvas_events(ical_url, user_id)
+        events = get_upcoming_events(raw_events, days_ahead=2)
+    else:
+        events = []
+else:
+    events = []
+urgent_events = []
+
+for event in events:
+    start = event.get('start')
+    if start:
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        hours_until = (start - now).total_seconds() / 3600
+        
+        # Show events within 24 hours
+        if 0 <= hours_until <= 24:
+            urgent_events.append((event, hours_until))
+
+if urgent_events:
+    # Sort by urgency (closest first)
+    urgent_events.sort(key=lambda x: x[1])
+    
+    st.markdown("---")
+    st.markdown("### ⚠️ Upcoming Deadlines")
+    
+    for event, hours_until in urgent_events[:3]:  # Show max 3 urgent events
+        if hours_until <= 1:
+            time_str = "Less than 1 hour"
+            urgency_color = "#ef4444"
+        elif hours_until <= 6:
+            time_str = f"{int(hours_until)} hours"
+            urgency_color = "#f59e0b"
+        else:
+            time_str = f"{int(hours_until)} hours"
+            urgency_color = "#e8a44a"
+        
+        st.markdown(
+            f'<div style="background:rgba(239,68,68,0.1); border:1px solid {urgency_color}; '
+            f'border-radius:8px; padding:12px; margin:8px 0;">'
+            f'<div style="display:flex; justify-content:space-between; align-items:center;">'
+            f'<div><strong>{event.get("title", "Untitled")}</strong></div>'
+            f'<div style="color:{urgency_color}; font-weight:bold;">{time_str}</div>'
+            f'</div>'
+            f'<div style="font-size:0.9rem; color:#9ca3af; margin-top:4px;">'
+            f'Due: {start.strftime("%b %d, %I:%M %p")}</div>'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 user = get_current_user()

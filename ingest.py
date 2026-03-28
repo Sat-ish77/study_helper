@@ -13,6 +13,7 @@ from typing import List
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
+from supabase_client import get_supabase
 
 load_dotenv()
 
@@ -175,10 +176,11 @@ def _get_embeddings():
 
 # ── Supabase pgvector insert ──────────────────────────────────────────────────
 
-def insert_chunks(chunks: List[Document], user_id: str) -> int:
-    from supabase import create_client
+def _client():
+    return get_supabase()
 
-    supabase   = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+def insert_chunks(chunks: List[Document], user_id: str) -> int:
+    supabase = _client()
     embeddings = _get_embeddings()
 
     texts  = [c.page_content for c in chunks]
@@ -205,9 +207,8 @@ def insert_chunks(chunks: List[Document], user_id: str) -> int:
 
 
 def delete_user_document(user_id: str, filename: str) -> bool:
-    from supabase import create_client
     try:
-        supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+        supabase = get_supabase()
         supabase.table("sh_document_chunks") \
             .delete() \
             .eq("user_id", user_id) \
@@ -220,9 +221,8 @@ def delete_user_document(user_id: str, filename: str) -> bool:
 
 
 def get_user_documents(user_id: str) -> List[str]:
-    from supabase import create_client
     try:
-        supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+        supabase = get_supabase()
         res = supabase.table("sh_document_chunks") \
             .select("source_file") \
             .eq("user_id", user_id) \
@@ -265,41 +265,3 @@ def ingest_uploaded_file(uploaded_file, user_id: str) -> dict:
         return {"success": False, "error": str(e)}
     finally:
         tmp_path.unlink(missing_ok=True)
-
-
-# ── Streamlit upload widget ───────────────────────────────────────────────────
-
-def render_upload_widget(user_id: str):
-    import streamlit as st
-
-    uploaded_files = st.file_uploader(
-        "Drop files here — PDF, DOCX, PPTX, TXT, or images",
-        type=["pdf", "docx", "pptx", "txt", "png", "jpg", "jpeg", "webp"],
-        accept_multiple_files=True,
-        key=f"uploader_{user_id}",
-    )
-
-    if uploaded_files:
-        for uf in uploaded_files:
-            with st.spinner(f"Processing {uf.name}..."):
-                result = ingest_uploaded_file(uf, user_id)
-            if result["success"]:
-                st.success(
-                    f"✓ **{result['filename']}** — "
-                    f"{result['pages']} pages, {result['chunks']} chunks indexed"
-                )
-            else:
-                st.error(f"✗ {uf.name}: {result['error']}")
-
-    docs = get_user_documents(user_id)
-    if docs:
-        with st.expander(f"Your documents ({len(docs)})", expanded=True):
-            for doc in docs:
-                col1, col2 = st.columns([5, 1])
-                col1.markdown(f"📄 {doc}")
-                if col2.button("Remove", key=f"del_{doc}_{user_id}"):
-                    if delete_user_document(user_id, doc):
-                        st.success(f"Removed {doc}")
-                        st.rerun()
-    else:
-        st.info("No documents uploaded yet. Upload your study materials above.")

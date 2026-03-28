@@ -11,28 +11,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Flat model registry ───────────────────────────────────────────────────────
-# Each model is independent — no provider nesting.
-# label: what user sees in dropdown
-# provider: which API to call
-# model_id: actual API model name
-# key_env: env var needed (None = local)
-# ctx: context window in tokens
-# free: show green Free badge
-
 MODELS = [
-    {"label": "Llama 3.3 70B",        "provider": "groq",        "model_id": "llama-3.3-70b-versatile",                      "key_env": "GROQ_API_KEY",       "ctx": 32768,   "free": True},
-    {"label": "Llama 3.1 8B",         "provider": "groq",        "model_id": "llama-3.1-8b-instant",                         "key_env": "GROQ_API_KEY",       "ctx": 131072,  "free": True},
-    {"label": "Mixtral 8x7B",         "provider": "groq",        "model_id": "mixtral-8x7b-32768",                           "key_env": "GROQ_API_KEY",       "ctx": 32768,   "free": True},
-    {"label": "Gemini 2.0 Flash",     "provider": "gemini",      "model_id": "gemini-2.0-flash",                             "key_env": "GEMINI_API_KEY",     "ctx": 1048576, "free": True},
-    {"label": "Gemini 1.5 Flash",     "provider": "gemini",      "model_id": "gemini-1.5-flash-latest",                      "key_env": "GEMINI_API_KEY",     "ctx": 1048576, "free": True},
-    {"label": "Databricks Llama 70B", "provider": "databricks",  "model_id": "databricks-meta-llama-3-1-70b-instruct",       "key_env": "DATABRICKS_TOKEN",   "ctx": 128000,  "free": True},
-    {"label": "Databricks Mixtral",   "provider": "databricks",  "model_id": "databricks-mixtral-8x7b-instruct",             "key_env": "DATABRICKS_TOKEN",   "ctx": 32768,   "free": True},
-    {"label": "Databricks DBRX",      "provider": "databricks",  "model_id": "databricks-dbrx-instruct",                    "key_env": "DATABRICKS_TOKEN",   "ctx": 32768,   "free": True},
-    {"label": "GPT-4o",               "provider": "openai",      "model_id": "gpt-4o",                                       "key_env": "OPENAI_API_KEY",     "ctx": 128000,  "free": False},
-    {"label": "GPT-4o mini",          "provider": "openai",      "model_id": "gpt-4o-mini",                                  "key_env": "OPENAI_API_KEY",     "ctx": 128000,  "free": False},
-    {"label": "Claude Sonnet",        "provider": "anthropic",   "model_id": "claude-sonnet-4-20250514",                     "key_env": "ANTHROPIC_API_KEY",  "ctx": 200000,  "free": False},
-    {"label": "Llama 3.2 (Local)",    "provider": "ollama",      "model_id": "llama3.2",                                     "key_env": None,                 "ctx": 128000,  "free": True},
-    {"label": "Mistral (Local)",      "provider": "ollama",      "model_id": "mistral",                                      "key_env": None,                 "ctx": 32768,   "free": True},
+    {"label": "Llama 3.3 70B",        "provider": "groq",        "model_id": "llama-3.3-70b-versatile",                "key_env": "GROQ_API_KEY",       "ctx": 32768,   "free": True},
+    {"label": "Llama 3.1 8B",         "provider": "groq",        "model_id": "llama-3.1-8b-instant",                  "key_env": "GROQ_API_KEY",       "ctx": 131072,  "free": True},
+    {"label": "Gemini 2.0 Flash",     "provider": "gemini",      "model_id": "gemini-2.0-flash-exp",                  "key_env": "GEMINI_API_KEY",     "ctx": 1048576, "free": True},
+    {"label": "Gemini 1.5 Flash",     "provider": "gemini",      "model_id": "gemini-1.5-flash",                      "key_env": "GEMINI_API_KEY",     "ctx": 1048576, "free": True},
+    {"label": "Databricks Llama 70B", "provider": "databricks",  "model_id": "databricks-meta-llama-3-1-70b-instruct","key_env": "DATABRICKS_TOKEN",   "ctx": 128000,  "free": True},
+    {"label": "Databricks Mixtral",   "provider": "databricks",  "model_id": "databricks-mixtral-8x7b-instruct",      "key_env": "DATABRICKS_TOKEN",   "ctx": 32768,   "free": True},
+    {"label": "Databricks DBRX",      "provider": "databricks",  "model_id": "databricks-dbrx-instruct",              "key_env": "DATABRICKS_TOKEN",   "ctx": 32768,   "free": True},
+    {"label": "GPT-4o",               "provider": "openai",      "model_id": "gpt-4o",                                "key_env": "OPENAI_API_KEY",     "ctx": 128000,  "free": False},
+    {"label": "GPT-4o mini",          "provider": "openai",      "model_id": "gpt-4o-mini",                           "key_env": "OPENAI_API_KEY",     "ctx": 128000,  "free": False},
+    {"label": "Claude Sonnet",        "provider": "anthropic",   "model_id": "claude-sonnet-4-20250514",              "key_env": "ANTHROPIC_API_KEY",  "ctx": 200000,  "free": False},
+    {"label": "Llama 3.2 (Local)",    "provider": "ollama",      "model_id": "llama3.2",                              "key_env": None,                 "ctx": 128000,  "free": True},
+    {"label": "Mistral (Local)",      "provider": "ollama",      "model_id": "mistral",                               "key_env": None,                 "ctx": 32768,   "free": True},
 ]
 
 CHARS_PER_TOKEN = 4
@@ -47,19 +38,73 @@ def _is_ollama_running() -> bool:
         return False
 
 
-def _is_available(m: dict) -> bool:
-    if m["provider"] == "ollama":
-        return _is_ollama_running()
-    if m["key_env"] is None:
-        return True
-    return bool(os.getenv(m["key_env"]))
-
-
 def get_available_models() -> list[dict]:
-    """Returns list of available model dicts."""
-    available = [m for m in MODELS if _is_available(m)]
-    # Always include at least GPT-4o if OPENAI_API_KEY set, else first available
-    return available if available else [MODELS[8]]  # GPT-4o as fallback
+    """
+    Returns models that have API keys set.
+    Does NOT ping any APIs — just checks env vars.
+    Live testing is only done in Admin panel health check.
+    """
+    available = []
+    for m in MODELS:
+        if m["provider"] == "ollama":
+            if _is_ollama_running():
+                available.append(m)
+            continue
+        if m["key_env"] is None or os.getenv(m["key_env"]):
+            available.append(m)
+    return available if available else [MODELS[0]]
+
+
+def test_all_models() -> list[dict]:
+    """
+    Full health check — pings every model with a test message.
+    Only call this from Admin panel, never on page load.
+    """
+    import time
+    results = []
+    TEST = "Reply with one word: working"
+    for m in MODELS:
+        result = {
+            "Model": m["label"],
+            "Provider": m["provider"],
+            "Status": "",
+            "Latency": "—",
+            "Preview": ""
+        }
+        if m["provider"] == "ollama" and not _is_ollama_running():
+            result["Status"] = "🔌 offline"
+            results.append(result)
+            continue
+        if m["key_env"] and not os.getenv(m["key_env"]):
+            result["Status"] = "❌ no key"
+            results.append(result)
+            continue
+        try:
+            from langchain_core.messages import HumanMessage
+            llm = get_llm(m["label"])
+            start = time.time()
+            response = llm.invoke([HumanMessage(content=TEST)])
+            elapsed = round(time.time() - start, 1)
+            result["Status"] = "✅ working"
+            result["Latency"] = f"{elapsed}s"
+            result["Preview"] = response.content[:40]
+        except Exception as e:
+            err = str(e).lower()
+            if "403" in str(e) or "401" in str(e) or "permission" in err:
+                result["Status"] = "❌ auth error"
+            elif "timeout" in err:
+                result["Status"] = "⏱️ timeout"
+            elif "connect" in err or "refused" in err:
+                result["Status"] = "🔌 offline"
+            elif "not_found" in err or "404" in str(e):
+                result["Status"] = "❌ model not found"
+            elif "resource_exhausted" in err or "quota" in err:
+                result["Status"] = "⚠️ quota exceeded"
+            else:
+                result["Status"] = "❌ error"
+            result["Preview"] = str(e)[:60]
+        results.append(result)
+    return results
 
 
 def get_model_by_label(label: str) -> dict | None:
@@ -72,59 +117,63 @@ def get_llm(model_label: str, temperature: float = 0):
     """Get LangChain LLM by model label string."""
     m = get_model_by_label(model_label)
     if not m:
-        # fallback to GPT-4o
-        m = MODELS[8]
+        m = next((x for x in MODELS if x["label"] == "GPT-4o mini"), MODELS[0])
 
     provider = m["provider"]
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI
-        return ChatOpenAI(model=m["model_id"], temperature=temperature,
-                          openai_api_key=os.getenv("OPENAI_API_KEY"))
+        return ChatOpenAI(
+            model=m["model_id"],
+            temperature=temperature,
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
 
     elif provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
-        return ChatAnthropic(model=m["model_id"], temperature=temperature,
-                             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"))
+        return ChatAnthropic(
+            model=m["model_id"],
+            temperature=temperature,
+            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
+        )
 
     elif provider == "groq":
         from langchain_groq import ChatGroq
-        return ChatGroq(model=m["model_id"], temperature=temperature,
-                        groq_api_key=os.getenv("GROQ_API_KEY"))
+        return ChatGroq(
+            model=m["model_id"],
+            temperature=temperature,
+            groq_api_key=os.getenv("GROQ_API_KEY")
+        )
 
     elif provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        return ChatGoogleGenerativeAI(model=m["model_id"], temperature=temperature,
-                                      google_api_key=os.getenv("GEMINI_API_KEY"))
+        return ChatGoogleGenerativeAI(
+            model=m["model_id"],
+            temperature=temperature,
+            google_api_key=os.getenv("GEMINI_API_KEY")
+        )
 
     elif provider == "databricks":
-        from langchain_openai import ChatOpenAI
-        return ChatOpenAI(
-            model=m["model_id"], temperature=temperature,
-            api_key=os.getenv("DATABRICKS_TOKEN"),
-            base_url=f"https://{os.getenv('DATABRICKS_HOST', '')}/serving-endpoints",
+        from databricks_langchain import ChatDatabricks
+        # ChatDatabricks reads DATABRICKS_HOST and DATABRICKS_TOKEN
+        # from environment automatically — ensure correct format
+        host = os.getenv("DATABRICKS_HOST", "")
+        if host and not host.startswith("http"):
+            os.environ["DATABRICKS_HOST"] = f"https://{host}"
+        return ChatDatabricks(
+            endpoint=m["model_id"],
+            temperature=temperature,
+            max_tokens=1000
         )
 
     elif provider == "ollama":
         from langchain_ollama import ChatOllama
-        return ChatOllama(model=m["model_id"], temperature=temperature)
+        return ChatOllama(
+            model=m["model_id"],
+            temperature=temperature
+        )
 
     raise ValueError(f"Unknown provider: {provider}")
-
-
-def get_embeddings():
-    """Databricks BGE if available, else OpenAI."""
-    token = os.getenv("DATABRICKS_TOKEN")
-    host  = os.getenv("DATABRICKS_HOST")
-    if token and host:
-        from langchain_openai import OpenAIEmbeddings
-        return OpenAIEmbeddings(
-            model="databricks-bge-large-en",
-            api_key=token,
-            base_url=f"https://{host}/serving-endpoints",
-        )
-    from langchain_openai import OpenAIEmbeddings
-    return OpenAIEmbeddings(model="text-embedding-3-small")
 
 
 # ── History truncation ────────────────────────────────────────────────────────
@@ -132,12 +181,12 @@ def get_embeddings():
 def truncate_history(messages: list, model_label: str,
                      system_prompt: str = "", reserve_tokens: int = 2000) -> list:
     m = get_model_by_label(model_label)
-    ctx_tokens   = m["ctx"] if m else 4096
+    ctx_tokens = m["ctx"] if m else 4096
     usable_chars = (ctx_tokens - reserve_tokens) * CHARS_PER_TOKEN - len(system_prompt)
 
     kept, used = [], 0
     for msg in reversed(messages):
-        content   = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+        content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
         msg_chars = len(str(content))
         if used + msg_chars > usable_chars:
             break
@@ -152,26 +201,24 @@ def truncate_history(messages: list, model_label: str,
 
 def render_model_selector() -> str:
     """
-    Renders a single flat model dropdown in the sidebar.
-    Returns selected model label (str).
-    Handles history carry-over on model switch.
+    Renders a flat model dropdown in the sidebar.
+    Returns selected model label.
+    Fast — no API calls, just checks env vars.
     """
     import streamlit as st
 
     available = get_available_models()
-    labels    = [m["label"] for m in available]
+    labels = [m["label"] for m in available]
 
     if not labels:
         st.sidebar.warning("No models available. Check your API keys in .env")
         return ""
 
-    # Default to first free model
     default_label = next((m["label"] for m in available if m["free"]), labels[0])
 
     if "llm_model" not in st.session_state:
         st.session_state.llm_model = default_label
 
-    # Keep selection valid if model becomes unavailable
     if st.session_state.llm_model not in labels:
         st.session_state.llm_model = default_label
 
@@ -193,7 +240,6 @@ def render_model_selector() -> str:
 
     st.session_state.llm_model = selected
 
-    # Show free badge
     model_info = get_model_by_label(selected)
     if model_info and model_info["free"]:
         st.sidebar.markdown(
@@ -202,7 +248,6 @@ def render_model_selector() -> str:
             unsafe_allow_html=True
         )
 
-    # Carry history over on switch, truncate if needed
     if selected != prev_model:
         history = st.session_state.get("chat_history", [])
         if history:
@@ -212,7 +257,6 @@ def render_model_selector() -> str:
                 dropped = len(history) - len(truncated)
                 st.sidebar.caption(f"ℹ️ {dropped} older message(s) trimmed for {selected}.")
 
-    # Ollama warning
     if model_info and model_info["provider"] == "ollama" and not _is_ollama_running():
         st.sidebar.warning("Ollama not running. Install from ollama.com and run `ollama serve`.")
 

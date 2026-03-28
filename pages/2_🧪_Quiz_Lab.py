@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Dict, List
 
 import streamlit as st
@@ -39,9 +40,35 @@ from agents.study_agent import LANGUAGES
 from ingest import get_user_documents
 from main import retrieve_docs, build_tagged_context
 from quiz_db import save_score, get_user_history, get_user_stats
+from canvas_api import get_upcoming_events, load_ical_url, fetch_canvas_events
 
 inject_css()
 user_id = require_auth()
+
+# ── Course code extraction helper ─────────────────────────────────────────────
+def get_course_options(user_id: str) -> list[str]:
+    """Extract course codes from Canvas events and return unique list."""
+    # First fetch the raw events
+    ical_url = load_ical_url(user_id)
+    if not ical_url:
+        return ["General"]
+    
+    raw_events = fetch_canvas_events(ical_url, user_id)
+    events = get_upcoming_events(raw_events, days_ahead=30)
+    course_codes = set()
+    
+    for event in events:
+        title = event.get("title", "")
+        # Extract patterns like "CS4540", "MATH 1010", "BIO-202"
+        matches = re.findall(r'\b[A-Z]{2,4}[-\s]?[0-9]{3,4}\b', title)
+        for match in matches:
+            # Normalize to "CODE1234" format
+            normalized = re.sub(r'\s+', '', match).replace('-', '')
+            course_codes.add(normalized)
+    
+    # Add "General" as default
+    options = ["General"] + sorted(list(course_codes))
+    return options
 
 # ── Quiz generation (kept from original, extended for 5 types + difficulty) ──
 def generate_quiz_from_context(
@@ -54,7 +81,7 @@ def generate_quiz_from_context(
 ) -> List[Dict]:
     type_instructions = {
         "mcq":        'Multiple choice — 4 options. correct = "A"/"B"/"C"/"D".',
-        "true_false": 'True/False. correct = "True" or "False".',
+        "true_false": 'True/False. correct = "True" or "False". IMPORTANT: The question MUST be a declarative statement that can be true or false. NEVER generate "why/how/what/when/where" questions for true_false type.',
         "fill_blank": 'Fill-in-the-blank. Use _____ in question. correct = answer word/phrase.',
         "short":      'Short answer. correct = 1-2 sentence ideal answer.',
         "medium":     'Medium answer. correct = 3-5 sentence ideal answer.',
@@ -68,6 +95,18 @@ def generate_quiz_from_context(
 Difficulty: {difficulty}
 Language: {language}
 Use a mix of these types:\n{selected_instructions}
+
+CRITICAL RULES FOR NON-ENGLISH LANGUAGES:
+- For true_false type, the question MUST be a declarative statement, NOT a question starting with Why/How/What/When/Where
+- In Nepali: NEVER use किन/कसरी/के/कहिले/कतै for true_false questions
+- Generate questions that are natural and grammatically correct in {language}
+- Ensure question types match their format exactly
+
+IMPORTANT CONSTRAINTS:
+- Each explanation must be unique and specific to that question. Never reuse the same explanation text across multiple questions.
+- NEVER generate questions about chapter numbers, page references, section headings, or document structure.
+- Questions must test understanding of actual concepts, not metadata about the document.
+- Focus on testing knowledge of the subject matter, not where information appears in the source material.
 
 STUDY MATERIAL:
 {context[:4000]}
@@ -92,7 +131,10 @@ No markdown fences, no extra text. Pure JSON array only."""
         questions = json.loads(raw.strip())
         return questions if isinstance(questions, list) else []
     except Exception as e:
-        st.error(f"Quiz generation error: {e}")
+        if "403" in str(e) or "permission" in str(e).lower():
+            st.error(f"❌ Model error: This model needs a valid API key. Try switching to Groq or Gemini in the sidebar.")
+        else:
+            st.error(f"Quiz generation error: {e}")
         return []
 
 
@@ -162,7 +204,7 @@ def render_quiz_question(question: Dict, idx: int):
 
 # ── Render results (kept from original, adds Supabase save) ──────────────────
 def render_quiz_results(questions: List[Dict], llm, topic: str, source_file: str,
-                         difficulty: str, types_used: List[str], language: str):
+                         difficulty: str, types_used: List[str], language: str, course_name: str = None):
     correct_count = 0
     total         = len(questions)
 
@@ -181,11 +223,18 @@ def render_quiz_results(questions: List[Dict], llm, topic: str, source_file: str
             is_correct   = grade_result.get("is_correct", False)
             feedback     = grade_result.get("feedback", "")
         else:
-            user_letter  = user_answer[0].upper() if user_answer else ""
-            is_correct   = (
-                user_letter == correct_answer.upper()
-                or user_answer == correct_answer
-            )
+            # Handle MCQ and True/False grading
+            options = q.get("options", [])
+            
+            # Resolve correct answer to full option text for comparison
+            if len(correct_answer) == 1 and correct_answer.isalpha() and options:
+                correct_idx = ord(correct_answer.upper()) - 65
+                correct_text = options[correct_idx] if 0 <= correct_idx < len(options) else correct_answer
+            else:
+                correct_text = correct_answer
+            
+            # Streamlit radio returns the full option text the user clicked
+            is_correct = (user_answer == correct_text)
             feedback = ""
 
         if is_correct:
@@ -195,16 +244,71 @@ def render_quiz_results(questions: List[Dict], llm, topic: str, source_file: str
         status_color = "#4ade80" if is_correct else "#f87171"
 
         feedback_html = f'<br><span style="color:#9ca3af;">Feedback: {feedback}</span>' if feedback else ""
-        st.markdown(
-            f'<div style="padding:15px; background:rgba(17,19,24,0.8);'
-            f' border-radius:10px; border-left:4px solid {status_color}; margin:10px 0;">'
-            f'<strong>{status_icon} Q{idx+1}:</strong> {q["question"]}<br>'
-            f'<span style="color:#6b7280;">Your answer: {user_answer or "Not answered"}</span><br>'
-            f'<span style="color:#4ade80;">Correct answer: {correct_answer}</span>'
-            f'{feedback_html}'
-            f'</div>',
-            unsafe_allow_html=True
-        )
+
+        # For MCQ and True/False, show all options with highlighting
+        if q_type in ("mcq", "true_false"):
+            options = q.get("options", [])
+            options_html = ""
+            for i, option in enumerate(options):
+                option_letter = chr(65 + i)  # A, B, C, D
+                is_user_choice = (user_answer == option)
+                is_correct_option = (option == correct_text)
+                
+                # Determine styling
+                if is_user_choice and is_correct_option:
+                    # User selected correct answer
+                    style = "background: rgba(74, 222, 128, 0.2); border: 2px solid #4ade80; color: #4ade80;"
+                    icon = "✅ "
+                elif is_user_choice and not is_correct_option:
+                    # User selected wrong answer
+                    style = "background: rgba(248, 113, 113, 0.2); border: 2px solid #f87171; color: #f87171;"
+                    icon = "❌ "
+                elif is_correct_option:
+                    # Correct answer not selected by user
+                    style = "background: rgba(74, 222, 128, 0.1); border: 1px solid #4ade80; color: #4ade80;"
+                    icon = "✓ "
+                else:
+                    # Unselected wrong option
+                    style = "background: rgba(107, 114, 128, 0.1); border: 1px solid #4b5563; color: #6b7280;"
+                    icon = ""
+                
+                options_html += f'<div style="{style} padding:8px 12px; margin:4px 0; border-radius:6px;">{icon}{option_letter}. {option}</div>'
+            
+            # Determine what to display as correct answer
+            if len(correct_answer) == 1 and correct_answer.isalpha() and options:
+                # Correct answer is a letter, find the corresponding option text
+                correct_idx = ord(correct_answer.upper()) - 65
+                if 0 <= correct_idx < len(options):
+                    display_correct = f"{correct_answer.upper()}. {options[correct_idx]}"
+                else:
+                    display_correct = correct_answer
+            else:
+                # Correct answer is already full text
+                display_correct = correct_answer
+            
+            st.markdown(
+                f'<div style="padding:15px; background:rgba(17,19,24,0.8);'
+                f' border-radius:10px; border-left:4px solid {status_color}; margin:10px 0;">'
+                f'<strong>{status_icon} Q{idx+1}:</strong> {q["question"]}<br><br>'
+                f'<strong>Options:</strong><br>{options_html}<br>'
+                f'<span style="color:#6b7280;">Your answer: {user_answer or "Not answered"}</span><br>'
+                f'<span style="color:#4ade80;">Correct answer: {display_correct}</span>'
+                f'{feedback_html}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        else:
+            # For fill_blank, short, medium - keep original display
+            st.markdown(
+                f'<div style="padding:15px; background:rgba(17,19,24,0.8);'
+                f' border-radius:10px; border-left:4px solid {status_color}; margin:10px 0;">'
+                f'<strong>{status_icon} Q{idx+1}:</strong> {q["question"]}<br>'
+                f'<span style="color:#6b7280;">Your answer: {user_answer or "Not answered"}</span><br>'
+                f'<span style="color:#4ade80;">Correct answer: {correct_answer}</span>'
+                f'{feedback_html}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
 
         if q.get("explanation"):
             st.markdown(
@@ -244,6 +348,7 @@ def render_quiz_results(questions: List[Dict], llm, topic: str, source_file: str
         difficulty=difficulty,
         types_used=types_used,
         language=language,
+        course_name=course_name,
     )
 
     if percentage >= 80:
@@ -253,15 +358,75 @@ def render_quiz_results(questions: List[Dict], llm, topic: str, source_file: str
         st.info("👍 Good job! Keep studying to improve further.")
     else:
         st.warning("📚 Keep practicing! Review the explanations above.")
+    
+    # Auto-flashcards suggestion (Idea B)
+    if percentage < 80 and correct_count < total:
+        # Find questions answered incorrectly
+        weak_questions = []
+        for idx, q in enumerate(questions):
+            user_answer = st.session_state.get(f"user_answer_{idx}", "") or ""
+            correct_answer = q.get("correct", "")
+            q_type = q.get("type", "mcq")
+            
+            is_correct = False
+            if q_type in ("fill_blank", "short", "medium"):
+                result = grade_answer(llm, q["question"], user_answer, correct_answer)
+                is_correct = result.get("is_correct", False)
+            else:
+                options = q.get("options", [])
+                if len(correct_answer) == 1 and correct_answer.isalpha() and options:
+                    ci = ord(correct_answer.upper()) - 65
+                    ct = options[ci] if 0 <= ci < len(options) else correct_answer
+                else:
+                    ct = correct_answer
+                is_correct = (user_answer == ct)
+            
+            if not is_correct:
+                weak_questions.append(q)
+        
+        if weak_questions and len(weak_questions) >= 2:
+            st.markdown("---")
+            st.markdown("### 🎯 Strengthen Weak Areas")
+            st.info(f"We identified {len(weak_questions)} areas you struggled with. Generate flashcards to practice these?")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🎲 Generate Flashcards", type="primary"):
+                    with st.spinner("Generating practice flashcards..."):
+                        from flashcard_db import create_flashcard
+                        
+                        # Generate flashcards from incorrect questions
+                        generated_count = 0
+                        for q in weak_questions[:3]:  # Max 3 cards
+                            # Create a simple Q&A from the question
+                            card_id = create_flashcard(
+                                user_id=user_id,
+                                question=q["question"],
+                                answer=q.get("explanation", q["correct"]),
+                                source="quiz_weakness",
+                                source_file=f"Quiz: {topic or 'General'}"
+                            )
+                            if card_id:
+                                generated_count += 1
+                        
+                        if generated_count > 0:
+                            st.success(f"✅ Generated {generated_count} flashcards for your weak areas!")
+                            st.markdown("👉 [Review your flashcards](pages/5_🃏_Flashcards.py)")
+                        else:
+                            st.error("Failed to generate flashcards")
+            
+            with col2:
+                if st.button("⏭️ Skip for now"):
+                    st.rerun()
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🔄 New Quiz", use_container_width=True, type="primary"):
+        if st.button("🔄 New Quiz", width='stretch', type="primary"):
             st.session_state.quiz_questions = None
             st.session_state.quiz_submitted = False
             st.rerun()
     with col2:
-        if st.button("📚 Back to Study Helper", use_container_width=True):
+        if st.button("📚 Back to Study Helper", width='stretch'):
             st.switch_page("pages/1_📚_Study_Helper.py")
 
 
@@ -273,6 +438,7 @@ if "quiz_source"    not in st.session_state: st.session_state.quiz_source    = "
 if "quiz_difficulty"not in st.session_state: st.session_state.quiz_difficulty= "medium"
 if "quiz_types"     not in st.session_state: st.session_state.quiz_types     = ["mcq", "true_false"]
 if "quiz_language"  not in st.session_state: st.session_state.quiz_language  = "English"
+if "quiz_course"    not in st.session_state: st.session_state.quiz_course    = "General"
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 sidebar_header(active_page="Quiz Lab")
@@ -352,6 +518,15 @@ if st.session_state.quiz_questions is None:
                 help="Easy = recall/definitions · Medium = application · Hard = analysis"
             )
             count = st.selectbox("Questions", [5, 10, 20, 50], index=1)
+            
+            # Course selector
+            course_options = get_course_options(user_id)
+            course = st.selectbox(
+                "Course (optional)",
+                course_options,
+                index=0,
+                help="Select a course to tag this quiz for better tracking"
+            )
 
         st.markdown(
             '<div style="font-size:0.78rem; color:#6b7280; margin:0.75rem 0 0.4rem;">'
@@ -366,7 +541,7 @@ if st.session_state.quiz_questions is None:
         use_medium = tc5.checkbox("Medium answer",value=False)
 
         submitted = st.form_submit_button(
-            "🎯 Generate Quiz", type="primary", use_container_width=True
+            "🎯 Generate Quiz", type="primary", width='stretch'
         )
 
     if submitted:
@@ -417,6 +592,7 @@ if st.session_state.quiz_questions is None:
                         st.session_state.quiz_difficulty = difficulty
                         st.session_state.quiz_types      = types
                         st.session_state.quiz_language   = lang
+                        st.session_state.quiz_course     = course
                         st.rerun()
                     else:
                         st.error("Could not generate quiz. Try a different topic.")
@@ -440,11 +616,11 @@ elif not st.session_state.quiz_submitted:
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("✅ Submit Quiz", type="primary", use_container_width=True):
+        if st.button("✅ Submit Quiz", type="primary", width='stretch'):
             st.session_state.quiz_submitted = True
             st.rerun()
 
-    if st.button("❌ Cancel", use_container_width=True):
+    if st.button("❌ Cancel", width='stretch'):
         st.session_state.quiz_questions = None
         st.session_state.quiz_submitted = False
         st.rerun()
@@ -460,4 +636,5 @@ else:
         difficulty  = st.session_state.quiz_difficulty,
         types_used  = st.session_state.quiz_types,
         language    = st.session_state.quiz_language,
+        course_name = st.session_state.quiz_course,
     )

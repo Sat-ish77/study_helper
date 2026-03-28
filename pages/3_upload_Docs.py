@@ -142,7 +142,7 @@ if docs:
                 unsafe_allow_html=True
             )
         with col2:
-            if st.button("Remove", key=f"del_{doc}", use_container_width=True):
+            if st.button("Remove", key=f"del_{doc}", width='stretch'):
                 if delete_user_document(user_id, doc):
                     st.success(f"Removed {doc}")
                     st.rerun()

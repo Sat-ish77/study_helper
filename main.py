@@ -16,6 +16,104 @@ from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 from tavily import TavilyClient
 
+# ── Conversational Intent Detection ────────────────────────────────────────────
+
+CONVERSATIONAL_TRIGGERS = [
+    "hi", "hello", "hey", "thanks", "thank you", "bye", "goodbye",
+    "how are you", "what are you", "who are you", "good morning",
+    "good evening", "good night", "what can you do", "help",
+    "ok", "okay", "cool", "great", "nice", "awesome", "got it",
+    "sounds good", "perfect", "sure", "alright", "no problem"
+]
+
+FOLLOW_UP_TRIGGERS = [
+    "go deeper", "deeper", "more detail", "explain more", "clarify",
+    "what about", "tell me more", "expand on", "elaborate", "can you explain that",
+    "what do you mean", "explain that", "more on this", "continue",
+    "more on that", "keep going", "go on",
+]
+
+def is_conversational(query: str) -> bool:
+    """Detect if query is conversational (greeting, thanks, etc.)"""
+    q = query.lower().strip().rstrip("!?.")
+    if len(q.split()) <= 4 and any(t in q for t in CONVERSATIONAL_TRIGGERS):
+        return True
+    return False
+
+def is_follow_up(query: str, history: List[Dict]) -> bool:
+    """Detect if query is a follow-up to previous conversation.
+    
+    STRICT rules — only match when the user clearly refers to the
+    previous answer, NOT when they ask a new standalone question.
+    """
+    if not history or not any(m["role"] == "assistant" for m in history):
+        return False
+
+    q = query.lower().strip().rstrip("!?.")
+    words = q.split()
+
+    # 1. Explicit follow-up phrases (multi-word, unambiguous)
+    if any(trigger in q for trigger in FOLLOW_UP_TRIGGERS):
+        return True
+
+    # 2. Very short (≤3 words) pronoun-only questions that clearly
+    #    reference the previous answer — e.g. "explain it", "why is that"
+    pronoun_refs = {"it", "that", "this", "them", "those", "these"}
+    if len(words) <= 3 and any(w in pronoun_refs for w in words):
+        return True
+
+    return False
+
+def answer_follow_up(query: str, history: List[Dict], llm) -> str:
+    """Handle follow-up questions using previous context without RAG search"""
+    try:
+        # Build context from last 3-4 exchanges
+        recent_history = history[-6:] if len(history) > 6 else history
+        
+        context_text = "\n\n".join([
+            f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
+            for msg in recent_history
+        ])
+        
+        prompt = f"""You're continuing a conversation about a study topic.
+
+PREVIOUS CONVERSATION:
+{context_text}
+
+FOLLOW-UP QUESTION: {query}
+
+Respond naturally based on the previous context. Don't search for new information.
+If the previous context doesn't contain enough information to answer, say so clearly.
+Keep your answer focused and helpful."""
+        
+        return llm.invoke([HumanMessage(content=prompt)]).content.strip()
+    except Exception as e:
+        print(f"[answer_follow_up] Error: {e}")
+        return "I'm having trouble continuing. Could you rephrase your question?"
+
+def answer_conversationally(query: str, llm) -> str:
+    """Respond conversationally without searching documents"""
+    try:
+        prompt = """You are a warm, friendly AI study assistant called Study Helper.
+    Respond naturally to this casual message. Keep it to 1-2 sentences.
+    Do NOT search any documents. Do NOT mention documents or sources.
+    If they seem ready to study, invite them to ask a study question.
+    Message: """ + query
+        return llm.invoke([HumanMessage(content=prompt)]).content
+    except Exception as e:
+        # Fallback responses if LLM fails
+        query_lower = query.lower().strip()
+        if any(greeting in query_lower for greeting in ["hi", "hello", "hey"]):
+            return f"Hello! I'm your Study Helper. How can I help you learn today?"
+        elif any(thanks in query_lower for thanks in ["thanks", "thank you"]):
+            return "You're welcome! Feel free to ask if you need anything else."
+        elif any(bye in query_lower for bye in ["bye", "goodbye"]):
+            return "Goodbye! Happy studying!"
+        elif "how are you" in query_lower:
+            return "I'm doing great and ready to help you study! What would you like to learn about?"
+        else:
+            return "Hi! I'm here to help you study. Ask me anything from your notes or documents."
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 TOP_K  =10
@@ -151,14 +249,12 @@ def retrieve_docs(user_id: str, question: str) -> RetrievalResult:
         embeddings  = get_embeddings()
         embed_query = embeddings.embed_query(question)
 
-        from supabase import create_client
+        from supabase_client import get_supabase
 
-        # Use service key to bypass RLS — anon key blocks RPC execution
-        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
-        supabase = create_client(
-            os.getenv("SUPABASE_URL"),
-            supabase_key,
-        )
+        def _client():
+            return get_supabase()
+
+        supabase = _client()
 
         response = supabase.rpc(
             "match_sh_documents",
@@ -176,6 +272,7 @@ def retrieve_docs(user_id: str, question: str) -> RetrievalResult:
 
         docs, scores = [], []
         for row in rows:
+            sim = float(row["similarity"]) if "similarity" in row else 0.0
             doc = Document(
                 page_content=row.get("content", ""),
                 metadata={
@@ -184,16 +281,16 @@ def retrieve_docs(user_id: str, question: str) -> RetrievalResult:
                     "page":      row.get("page_num"),
                     "slide":     row.get("slide_num"),
                     "user_id":   row.get("user_id"),
+                    "similarity": sim,
                 }
             )
             docs.append(doc)
-            if "similarity" in row:
-                scores.append(float(row["similarity"]))
+            if sim:
+                scores.append(sim)
 
         context_chars = sum(len(d.page_content) for d in docs)
         avg_score = (sum(scores) / len(scores)) if scores else None
         return RetrievalResult(docs=docs, avg_score=avg_score, context_chars=context_chars)
-
     except Exception as e:
         print(f"[retrieve_docs] Error: {e}")
         return RetrievalResult(docs=[], avg_score=None, context_chars=0)
@@ -202,15 +299,25 @@ def retrieve_docs(user_id: str, question: str) -> RetrievalResult:
 # ── Sufficiency checks ────────────────────────────────────────────────────────
 
 def context_is_sufficient(rr: RetrievalResult, length_mode: str) -> bool:
-    if rr.avg_score is None:
+    """Check if retrieved docs are sufficient based on best score or top-3 average."""
+    if not rr.docs:
         return False
-    thresholds = {
-        "short":  (MIN_CONTEXT_CHARS_SHORT, MIN_AVG_SCORE_SHORT),
-        "medium": (MIN_CONTEXT_CHARS_MED,   MIN_AVG_SCORE_MED),
-        "long":   (MIN_CONTEXT_CHARS_LONG,  MIN_AVG_SCORE_LONG),
-    }
-    min_chars, min_score = thresholds.get(length_mode, thresholds["medium"])
-    return rr.context_chars >= min_chars and rr.avg_score >= min_score
+    # Extract similarity scores from doc metadata
+    scores = []
+    for d in rr.docs:
+        meta = d.metadata if hasattr(d, "metadata") else {}
+        sim = meta.get("similarity", 0)
+        if sim > 0:
+            scores.append(sim)
+    # If no scores available, assume sufficient (legacy behavior)
+    if not scores:
+        return True
+    best_score = max(scores)
+    top_3_avg = sum(sorted(scores, reverse=True)[:3]) / min(3, len(scores))
+    # Thresholds: 0.30/0.35/0.40 for short/medium/long
+    thresholds = {"short": 0.30, "medium": 0.35, "long": 0.40}
+    threshold = thresholds.get(length_mode, 0.35)
+    return best_score >= threshold or top_3_avg >= threshold
 
 
 def coverage_check_for_comparison(
