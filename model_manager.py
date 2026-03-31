@@ -12,18 +12,15 @@ load_dotenv()
 
 # ── Flat model registry ───────────────────────────────────────────────────────
 MODELS = [
-    {"label": "Llama 3.3 70B",        "provider": "groq",        "model_id": "llama-3.3-70b-versatile",                "key_env": "GROQ_API_KEY",       "ctx": 32768,   "free": True},
-    {"label": "Llama 3.1 8B",         "provider": "groq",        "model_id": "llama-3.1-8b-instant",                  "key_env": "GROQ_API_KEY",       "ctx": 131072,  "free": True},
-    {"label": "Gemini 2.0 Flash",     "provider": "gemini",      "model_id": "gemini-2.0-flash-exp",                  "key_env": "GEMINI_API_KEY",     "ctx": 1048576, "free": True},
-    {"label": "Gemini 1.5 Flash",     "provider": "gemini",      "model_id": "gemini-1.5-flash",                      "key_env": "GEMINI_API_KEY",     "ctx": 1048576, "free": True},
-    {"label": "Databricks Llama 70B", "provider": "databricks",  "model_id": "databricks-meta-llama-3-1-70b-instruct","key_env": "DATABRICKS_TOKEN",   "ctx": 128000,  "free": True},
-    {"label": "Databricks Mixtral",   "provider": "databricks",  "model_id": "databricks-mixtral-8x7b-instruct",      "key_env": "DATABRICKS_TOKEN",   "ctx": 32768,   "free": True},
-    {"label": "Databricks DBRX",      "provider": "databricks",  "model_id": "databricks-dbrx-instruct",              "key_env": "DATABRICKS_TOKEN",   "ctx": 32768,   "free": True},
-    {"label": "GPT-4o",               "provider": "openai",      "model_id": "gpt-4o",                                "key_env": "OPENAI_API_KEY",     "ctx": 128000,  "free": False},
-    {"label": "GPT-4o mini",          "provider": "openai",      "model_id": "gpt-4o-mini",                           "key_env": "OPENAI_API_KEY",     "ctx": 128000,  "free": False},
-    {"label": "Claude Sonnet",        "provider": "anthropic",   "model_id": "claude-sonnet-4-20250514",              "key_env": "ANTHROPIC_API_KEY",  "ctx": 200000,  "free": False},
-    {"label": "Llama 3.2 (Local)",    "provider": "ollama",      "model_id": "llama3.2",                              "key_env": None,                 "ctx": 128000,  "free": True},
-    {"label": "Mistral (Local)",      "provider": "ollama",      "model_id": "mistral",                               "key_env": None,                 "ctx": 32768,   "free": True},
+    # Groq (free, fast inference) - only production models
+    {"label": "Llama 3.3 70B",        "provider": "groq",        "model_id": "llama-3.3-70b-versatile",  "key_env": "GROQ_API_KEY",   "ctx": 32768,   "free": True},
+    {"label": "Llama 3.1 8B",         "provider": "groq",        "model_id": "llama-3.1-8b-instant",     "key_env": "GROQ_API_KEY",   "ctx": 131072,  "free": True},
+    # Gemini (free tier) - Flash models have better rate limits
+    {"label": "Gemini 2.5 Flash",     "provider": "gemini",      "model_id": "gemini-2.5-flash",         "key_env": "GEMINI_API_KEY", "ctx": 1048576, "free": True},
+    {"label": "Gemini 2.5 Flash-Lite","provider": "gemini",      "model_id": "gemini-2.5-flash-lite",    "key_env": "GEMINI_API_KEY", "ctx": 1048576, "free": True},
+    # OpenAI (paid)
+    {"label": "GPT-4o",               "provider": "openai",      "model_id": "gpt-4o",                   "key_env": "OPENAI_API_KEY", "ctx": 128000,  "free": False},
+    {"label": "GPT-4o mini",          "provider": "openai",      "model_id": "gpt-4o-mini",              "key_env": "OPENAI_API_KEY", "ctx": 128000,  "free": False},
 ]
 
 CHARS_PER_TOKEN = 4
