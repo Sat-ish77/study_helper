@@ -36,6 +36,14 @@ class GenerateQuizRequest(BaseModel):
     course_name: Optional[str] = None
 
 
+class GradeRequest(BaseModel):
+    question: str
+    user_answer: str
+    correct_answer: str
+    question_type: str = "short"  # short / medium / fill_blank
+    model: str = "Llama 3.3 70B"
+
+
 class SaveScoreRequest(BaseModel):
     topic: str
     score: int           # raw count of correct answers
@@ -135,6 +143,67 @@ For fill_blank type, question should have ___ for blank."""
                 detail="Model API key invalid. Try switching to Groq or OpenAI."
             )
         raise HTTPException(status_code=500, detail=f"Quiz generation failed: {error}")
+
+
+# ── Grade Answer (AI semantic grading) ───────────────────────────────────────
+
+@router.post("/grade")
+async def grade_answer(
+    body: GradeRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    AI-powered grading for short/medium/fill_blank answers.
+    Uses LLM to evaluate semantic correctness with partial credit.
+    Returns: {is_correct, score (0-100), feedback}
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+    import json
+
+    if not body.user_answer.strip():
+        return {"is_correct": False, "score": 0, "feedback": "No answer provided."}
+
+    llm = get_llm(body.model)
+
+    prompt = f"""Grade this student's answer:
+
+Question: {body.question}
+Student's Answer: {body.user_answer}
+Correct Answer: {body.correct_answer}
+Question Type: {body.question_type}
+
+Grading rules:
+- Consider exact matches, synonyms, paraphrases, and partial credit
+- For fill_blank: be strict on key terms but allow minor spelling variations
+- For short answers: award partial credit for partially correct responses
+- For medium answers: evaluate completeness, accuracy, and understanding
+- Score 0-100 where 100 is perfect, 70+ is correct, 40-69 is partial, below 40 is incorrect
+
+Respond with ONLY valid JSON:
+{{"is_correct": true/false, "score": 0-100, "feedback": "brief specific feedback"}}"""
+
+    try:
+        resp = llm.invoke([
+            SystemMessage(content="You are a fair academic grader. Return only valid JSON."),
+            HumanMessage(content=prompt)
+        ])
+        raw = resp.content.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        result = json.loads(raw.strip())
+        # Normalize: is_correct = score >= 70
+        result["is_correct"] = result.get("score", 0) >= 70
+        return result
+    except Exception:
+        # Fallback to exact match
+        is_correct = body.user_answer.lower().strip() == body.correct_answer.lower().strip()
+        return {
+            "is_correct": is_correct,
+            "score": 100 if is_correct else 0,
+            "feedback": "Correct!" if is_correct else f"Expected: {body.correct_answer}",
+        }
 
 
 # ── Save Score ────────────────────────────────────────────────────────────────
@@ -244,3 +313,23 @@ async def get_weak_topics(
 
     weak.sort(key=lambda x: x["avg_accuracy"])
     return {"weak_topics": weak, "threshold": threshold}
+
+
+# ── Stats ────────────────────────────────────────────────────────────────────
+
+@router.get("/stats")
+async def quiz_stats(
+    user_id: str = Depends(get_current_user)
+):
+    """Get comprehensive quiz stats: average, total taken, best score, recent."""
+    from services.quiz_service import get_quiz_stats
+    return get_quiz_stats(user_id)
+
+
+@router.get("/user-stats")
+async def user_stats(
+    user_id: str = Depends(get_current_user)
+):
+    """Simplified stats for dashboard: total_questions, accuracy_pct, total_quizzes."""
+    from services.quiz_service import get_user_stats
+    return get_user_stats(user_id)

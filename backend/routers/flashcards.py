@@ -52,6 +52,43 @@ class BulkSaveRequest(BaseModel):
     cards: list   # list of {question, answer, source_file}
 
 
+class SaveFromQARequest(BaseModel):
+    question: str
+    answer: str
+    source_file: Optional[str] = ""
+
+
+# ── Stats (must be before /{card_id} routes) ─────────────────────────────────
+
+@router.get("/stats")
+async def flashcard_stats(
+    user_id: str = Depends(get_current_user)
+):
+    """Get flashcard statistics: total, due, learned, new, retention %."""
+    from services.flashcard_service import get_flashcard_stats
+    return get_flashcard_stats(user_id)
+
+
+# ── Save from Q&A (must be before /{card_id} routes) ────────────────────────
+
+@router.post("/from-qa")
+async def save_from_qa(
+    body: SaveFromQARequest,
+    user_id: str = Depends(get_current_user)
+):
+    """Save a flashcard from a chat Q&A pair (cleans preamble)."""
+    from services.flashcard_service import save_flashcard_from_qa
+    card_id = save_flashcard_from_qa(
+        user_id=user_id,
+        question=body.question,
+        answer=body.answer,
+        source_file=body.source_file or ""
+    )
+    if card_id:
+        return {"created": True, "card_id": card_id}
+    raise HTTPException(status_code=500, detail="Failed to save flashcard")
+
+
 # ── List Cards ────────────────────────────────────────────────────────────────
 
 @router.get("")

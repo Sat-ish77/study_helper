@@ -67,6 +67,93 @@ CANT_ANSWER = [
 ]
 
 
+# ── Conversational Intent Detection (ported from main.py) ────────────────────
+
+CONVERSATIONAL_TRIGGERS = [
+    "hi", "hello", "hey", "thanks", "thank you", "bye", "goodbye",
+    "how are you", "what are you", "who are you", "good morning",
+    "good evening", "good night", "what can you do", "help",
+    "ok", "okay", "cool", "great", "nice", "awesome", "got it",
+    "sounds good", "perfect", "sure", "alright", "no problem"
+]
+
+FOLLOW_UP_TRIGGERS = [
+    "go deeper", "deeper", "more detail", "explain more", "clarify",
+    "what about", "tell me more", "expand on", "elaborate", "can you explain that",
+    "what do you mean", "explain that", "more on this", "continue",
+    "more on that", "keep going", "go on",
+]
+
+
+def is_conversational(query: str) -> bool:
+    """Detect if query is conversational (greeting, thanks, etc.)"""
+    q = query.lower().strip().rstrip("!?.")
+    if len(q.split()) <= 4 and any(t in q for t in CONVERSATIONAL_TRIGGERS):
+        return True
+    return False
+
+
+def is_follow_up(query: str, history: list) -> bool:
+    """Detect if query is a follow-up to previous conversation."""
+    if not history or not any(m.get("role") == "assistant" for m in history):
+        return False
+    q = query.lower().strip().rstrip("!?.")
+    words = q.split()
+    if any(trigger in q for trigger in FOLLOW_UP_TRIGGERS):
+        return True
+    pronoun_refs = {"it", "that", "this", "them", "those", "these"}
+    if len(words) <= 3 and any(w in pronoun_refs for w in words):
+        return True
+    return False
+
+
+def answer_conversationally(query: str, llm) -> str:
+    """Respond conversationally without searching documents."""
+    from langchain_core.messages import HumanMessage
+    try:
+        prompt = ("You are a warm, friendly AI study assistant called Study Helper. "
+                  "Respond naturally to this casual message. Keep it to 1-2 sentences. "
+                  "Do NOT search any documents. Do NOT mention documents or sources. "
+                  "If they seem ready to study, invite them to ask a study question. "
+                  "Message: " + query)
+        return llm.invoke([HumanMessage(content=prompt)]).content
+    except Exception:
+        query_lower = query.lower().strip()
+        if any(g in query_lower for g in ["hi", "hello", "hey"]):
+            return "Hello! I'm your Study Helper. How can I help you learn today?"
+        elif any(t in query_lower for t in ["thanks", "thank you"]):
+            return "You're welcome! Feel free to ask if you need anything else."
+        elif any(b in query_lower for b in ["bye", "goodbye"]):
+            return "Goodbye! Happy studying!"
+        elif "how are you" in query_lower:
+            return "I'm doing great and ready to help you study! What would you like to learn about?"
+        return "Hi! I'm here to help you study. Ask me anything from your notes or documents."
+
+
+def answer_follow_up(query: str, history: list, llm) -> str:
+    """Handle follow-up questions using previous context without RAG search."""
+    from langchain_core.messages import HumanMessage
+    try:
+        recent_history = history[-6:] if len(history) > 6 else history
+        context_text = "\n\n".join([
+            f"{'User' if msg['role'] == 'user' else 'Assistant'}: {msg['content']}"
+            for msg in recent_history
+        ])
+        prompt = f"""You're continuing a conversation about a study topic.
+
+PREVIOUS CONVERSATION:
+{context_text}
+
+FOLLOW-UP QUESTION: {query}
+
+Respond naturally based on the previous context. Don't search for new information.
+If the previous context doesn't contain enough information to answer, say so clearly.
+Keep your answer focused and helpful."""
+        return llm.invoke([HumanMessage(content=prompt)]).content.strip()
+    except Exception:
+        return "I'm having trouble continuing. Could you rephrase your question?"
+
+
 # ── Embedding ─────────────────────────────────────────────────────────────────
 
 def embed_query(text: str) -> list[float]:
@@ -230,6 +317,32 @@ def build_answer(
     """
     from langchain_core.messages import HumanMessage, SystemMessage
 
+    # ── Conversational shortcut (hi, thanks, bye) ─────────────────────
+    if is_conversational(question):
+        answer = answer_conversationally(question, llm)
+        if language != "English" and answer:
+            answer = translate_answer(answer, language, llm)
+        return {
+            "answer": answer,
+            "file_sources": [],
+            "web_sources": [],
+            "raw_sources": [],
+            "used_web": False,
+        }
+
+    # ── Follow-up shortcut (explain more, what about that) ────────────
+    if is_follow_up(question, history):
+        answer = answer_follow_up(question, history, llm)
+        if language != "English" and answer:
+            answer = translate_answer(answer, language, llm)
+        return {
+            "answer": answer,
+            "file_sources": [],
+            "web_sources": [],
+            "raw_sources": [],
+            "used_web": False,
+        }
+
     length_instr = LENGTH_INSTRUCTIONS.get(mode, LENGTH_INSTRUCTIONS["medium"])
     system_prompt = f"{SYSTEM_RULES}\n\n{length_instr}"
     history_ctx = build_history_context(history)
@@ -334,6 +447,24 @@ async def build_answer_stream(
     data: {"done": true, "sources": {...}}\n\n
     """
     from langchain_core.messages import HumanMessage, SystemMessage
+
+    # ── Conversational shortcut (hi, thanks, bye) ─────────────────────
+    if is_conversational(question):
+        answer = answer_conversationally(question, llm)
+        if language != "English" and answer:
+            answer = translate_answer(answer, language, llm)
+        yield f"data: {json.dumps({'chunk': answer})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'file_sources': [], 'web_sources': [], 'raw_sources': [], 'used_web': False})}\n\n"
+        return
+
+    # ── Follow-up shortcut (explain more, what about that) ────────────
+    if is_follow_up(question, history):
+        answer = answer_follow_up(question, history, llm)
+        if language != "English" and answer:
+            answer = translate_answer(answer, language, llm)
+        yield f"data: {json.dumps({'chunk': answer})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'file_sources': [], 'web_sources': [], 'raw_sources': [], 'used_web': False})}\n\n"
+        return
 
     length_instr = LENGTH_INSTRUCTIONS.get(mode, LENGTH_INSTRUCTIONS["medium"])
     system_prompt = f"{SYSTEM_RULES}\n\n{length_instr}"

@@ -57,13 +57,17 @@ async def get_url(user_id: str = Depends(get_current_user)):
 
 @router.delete("/url")
 async def clear_url(user_id: str = Depends(get_current_user)):
-    """Clear user's iCal URL."""
+    """Clear user's iCal URL and associated cache."""
     sb = get_db()
     sb.table("sh_user_settings").upsert({
         "user_id": user_id,
         "ical_url": None,
         "updated_at": datetime.now(timezone.utc).isoformat()
     }, on_conflict="user_id").execute()
+
+    from services.canvas_service import clear_cache_for_user
+    clear_cache_for_user(user_id)
+
     return {"cleared": True}
 
 
@@ -133,6 +137,11 @@ async def get_events(
         # Sort by start date
         events.sort(key=lambda e: e.get("start") or "")
 
+        # Add category to each event
+        from services.canvas_service import categorize_event
+        for ev in events:
+            ev["category"] = categorize_event(ev)
+
         # Cache for 1 hour
         expires_at = (now + timedelta(hours=1)).isoformat()
         sb.table("sh_canvas_cache").upsert({
@@ -146,3 +155,32 @@ async def get_events(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch calendar: {str(e)}")
+
+
+# ── Dismiss / Dismissed ──────────────────────────────────────────────────────
+
+class DismissRequest(BaseModel):
+    event_id: str
+
+
+@router.post("/dismiss")
+async def dismiss_event_endpoint(
+    body: DismissRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """Dismiss a calendar event."""
+    from services.canvas_service import dismiss_event
+    ok = dismiss_event(user_id, body.event_id)
+    if ok:
+        return {"dismissed": True}
+    raise HTTPException(status_code=500, detail="Failed to dismiss event")
+
+
+@router.get("/dismissed")
+async def get_dismissed_endpoint(
+    user_id: str = Depends(get_current_user)
+):
+    """Get list of dismissed event IDs."""
+    from services.canvas_service import get_dismissed
+    ids = get_dismissed(user_id)
+    return {"dismissed_ids": ids, "count": len(ids)}

@@ -30,19 +30,7 @@ from dependencies import get_current_user
 
 router = APIRouter()
 
-LANGUAGE_CODES = {
-    "English":    "en",
-    "Nepali":     "ne",
-    "Hindi":      "hi",
-    "Spanish":    "es",
-    "French":     "fr",
-    "German":     "de",
-    "Chinese":    "zh",
-    "Japanese":   "ja",
-    "Korean":     "ko",
-    "Arabic":     "ar",
-    "Portuguese": "pt",
-}
+from services.tts_service import LANGUAGE_CODES, clean_for_tts, gtts_synthesize, elevenlabs_synthesize
 
 
 # ── Voice Input (Whisper) ─────────────────────────────────────────────────────
@@ -121,16 +109,16 @@ async def synthesize(
     - Removes markdown formatting
     - Removes emoji source lines
     """
-    text = _clean_for_tts(body.text)
+    text = clean_for_tts(body.text)
     lang_code = LANGUAGE_CODES.get(body.language, "en")
 
     # Try gTTS first
-    audio_b64 = _gtts(text, lang_code)
+    audio_b64 = gtts_synthesize(text, lang_code)
     engine_used = "gtts"
 
     # Fallback to ElevenLabs if gTTS fails
     if not audio_b64:
-        audio_b64 = _elevenlabs(text)
+        audio_b64 = elevenlabs_synthesize(text)
         engine_used = "elevenlabs"
 
     if not audio_b64:
@@ -144,58 +132,3 @@ async def synthesize(
         "engine": engine_used,
         "language": body.language,
     }
-
-
-def _clean_for_tts(text: str) -> str:
-    """Remove citations, markdown, emojis before speaking."""
-    # Remove citation tags
-    text = re.sub(r'\[S\d+\]|\[W\d+\]', '', text)
-    # Remove markdown
-    text = re.sub(r'\*\*|\*|#+', '', text)
-    # Remove emoji lines (📄 Sources:, 🌐 Web:)
-    text = re.sub(r'[📄🌐]\s.*?(?=\n|$)', '', text)
-    # Remove URLs
-    text = re.sub(r'https?://\S+', '', text)
-    # Collapse whitespace
-    text = re.sub(r'\n+', ' ', text)
-    text = text.strip()
-    # Limit length (gTTS and ElevenLabs have limits)
-    return text[:3000]
-
-
-def _gtts(text: str, lang: str = "en") -> str | None:
-    """Generate speech with gTTS. Returns base64 MP3 or None."""
-    try:
-        from gtts import gTTS
-        tts = gTTS(text=text, lang=lang, slow=False)
-        buf = io.BytesIO()
-        tts.write_to_fp(buf)
-        buf.seek(0)
-        return base64.b64encode(buf.read()).decode()
-    except Exception as e:
-        print(f"[speech] gTTS failed: {e}")
-        return None
-
-
-def _elevenlabs(text: str) -> str | None:
-    """Generate speech with ElevenLabs. Returns base64 MP3 or None."""
-    try:
-        from elevenlabs.client import ElevenLabs
-        key = os.getenv("ELEVENLABS_API_KEY")
-        voice_id = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
-
-        if not key:
-            return None
-
-        client = ElevenLabs(api_key=key)
-        audio = client.text_to_speech.convert(
-            text=text,
-            voice_id=voice_id,
-            model_id="eleven_multilingual_v2",
-            output_format="mp3_44100_128"
-        )
-        audio_bytes = b"".join(audio)
-        return base64.b64encode(audio_bytes).decode()
-    except Exception as e:
-        print(f"[speech] ElevenLabs failed: {e}")
-        return None

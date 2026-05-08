@@ -204,3 +204,46 @@ async def list_documents(
             docs.append({"source_file": sf, "filetype": row.get("filetype", "")})
 
     return {"documents": docs, "count": len(docs)}
+
+
+# ── Translate Answer ─────────────────────────────────────────────────────────
+
+class TranslateRequest(BaseModel):
+    text: str
+    target_language: str
+    question: Optional[str] = None
+
+
+@router.post("/translate")
+async def translate_answer(
+    body: TranslateRequest,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Translate an existing answer to a target language.
+    Keeps technical terms in English.
+    """
+    from langchain_core.messages import HumanMessage
+    llm = get_llm("Llama 3.3 70B")
+
+    prompt = f"""Translate the following text to {body.target_language}.
+
+Strict rules:
+1. Use simple, everyday {body.target_language} words that a high school student would understand
+2. Keep ALL technical/scientific terms in English (e.g. "photosynthesis", "algorithm", "RAM", "DNA", "HTTP")
+3. Keep ALL code snippets, formulas, and equations in English
+4. Keep ALL proper nouns (names, brands, places) in English
+5. Write naturally — how a {body.target_language} teacher would explain this to a student
+6. Do NOT translate any text inside backticks or code blocks
+
+Text to translate:
+{body.text}"""
+
+    try:
+        resp = llm.invoke([HumanMessage(content=prompt)])
+        return {
+            "translated_text": resp.content.strip(),
+            "language": body.target_language,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")

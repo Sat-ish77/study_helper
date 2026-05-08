@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from routers import rag, speech, quiz, flashcards, canvas, conversations, dashboard, models
+from routers import rag, speech, quiz, flashcards, canvas, conversations, dashboard, models, learn_more, images
 
 app = FastAPI(
     title="Study Helper API",
@@ -36,6 +36,8 @@ app.include_router(canvas.router,        prefix="/api/v1/canvas",        tags=["
 app.include_router(conversations.router, prefix="/api/v1/conversations", tags=["Conversations"])
 app.include_router(dashboard.router,     prefix="/api/v1/dashboard",     tags=["Dashboard"])
 app.include_router(models.router,        prefix="/api/v1/models",        tags=["Models"])
+app.include_router(learn_more.router,    prefix="/api/v1/learn-more",    tags=["Learn More"])
+app.include_router(images.router,        prefix="/api/v1/images",        tags=["Images"])
 
 @app.get("/")
 def root():
